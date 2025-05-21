@@ -1,8 +1,10 @@
 const express = require('express');
 const axios = require('axios');
+const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
+app.use(cors()); // ← ESSENCIAL para GPT acessar
 app.use(express.json());
 
 const TINY_API_BASE = 'https://api.tiny.com.br/api2';
