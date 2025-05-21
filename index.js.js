@@ -55,20 +55,92 @@ app.get('/pedidos', async (req, res) => {
   }
 });
 
-app.get('/pedido/:numero', async (req, res) => {
+app.get('/pedido/:id', async (req, res) => {
   try {
-    const { numero } = req.params;
-    const form = new URLSearchParams({ token: TOKEN, formato: FORMATO, numero });
+    const { id } = req.params;
+
+    const form = new URLSearchParams({
+      token: TOKEN,
+      formato: FORMATO,
+      id
+    });
+
     const { data } = await axios.post(`${TINY_API_BASE}/pedido.obter.php`, form.toString(), urlEncodedHeaders);
 
-    if (data.retorno.status !== "OK") {
-      return res.status(500).json({ error: "Erro ao buscar pedido", detalhes: data.retorno.erros });
+    if (data.retorno.status === "Erro") {
+      const erroMsg = data.retorno.erros?.[0]?.erro || "Erro desconhecido";
+      if (erroMsg.toLowerCase().includes("token")) {
+        return res.status(401).json({ error: "Token inválido. Verifique suas credenciais da API do Tiny." });
+      } else if (erroMsg.toLowerCase().includes("pedido não localizado")) {
+        return res.status(404).json({ mensagem: "Pedido não localizado com esse ID." });
+      } else {
+        return res.status(500).json({ error: erroMsg });
+      }
     }
 
-    res.json(data.retorno.pedido);
+    const p = data.retorno.pedido;
+
+    const pedidoFormatado = {
+      numero: p.numero,
+      data: p.data_pedido,
+      total: p.total_pedido,
+      cliente: p.cliente?.nome || "N/D",
+      status: p.situacao,
+      frete: p.valor_frete,
+      itens: (p.itens || []).map(i => ({
+        descricao: i.item.descricao,
+        quantidade: Number(i.item.quantidade),
+        valor_unitario: Number(i.item.valor_unitario)
+      })),
+      parcelas: (p.parcelas || []).map(parcela => ({
+        data: parcela.parcela.data,
+        valor: Number(parcela.parcela.valor)
+      })),
+      rastreio: p.codigo_rastreamento ? {
+        codigo: p.codigo_rastreamento,
+        url: p.url_rastreamento
+      } : null
+    };
+
+    res.json(pedidoFormatado);
+
   } catch (error) {
-    console.error('[ERRO] /pedido:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Erro ao obter pedido.' });
+    console.error('[ERRO] /pedido/:id:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Erro ao consultar detalhes do pedido.' });
+  }
+});
+
+app.get('/pedido/numero/:numero', async (req, res) => {
+  try {
+    const { numero } = req.params;
+    const form = new URLSearchParams({
+      token: TOKEN,
+      formato: FORMATO,
+      numero
+    });
+
+    const { data } = await axios.post(`${TINY_API_BASE}/pedidos.pesquisa.php`, form.toString(), urlEncodedHeaders);
+
+    if (data.retorno.status === "Erro") {
+      const erroMsg = data.retorno.erros?.[0]?.erro || "Erro desconhecido";
+      if (erroMsg.toLowerCase().includes("token")) {
+        return res.status(401).json({ error: "Token inválido. Verifique suas credenciais da API do Tiny." });
+      } else {
+        return res.status(404).json({ mensagem: "Pedido não encontrado com esse número." });
+      }
+    }
+
+    const pedidos = data.retorno.pedidos || [];
+    if (pedidos.length === 0) {
+      return res.status(404).json({ mensagem: "Pedido não localizado." });
+    }
+
+    const pedido = pedidos[0].pedido;
+    res.json(pedido);
+
+  } catch (error) {
+    console.error('[ERRO] /pedido/numero/:numero', error.response?.data || error.message);
+    res.status(500).json({ error: 'Erro ao consultar pedido por número.' });
   }
 });
 
