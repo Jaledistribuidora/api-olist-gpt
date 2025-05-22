@@ -20,7 +20,6 @@ const urlEncodedHeaders = {
 app.get('/pedidos', async (req, res) => {
   try {
     const { status, data_inicial, data_final } = req.query;
-    if (!status) return res.status(400).json({ error: 'Parâmetro "status" é obrigatório.' });
 
     const hoje = new Date();
     const dataFinal = data_final || hoje.toISOString().split('T')[0];
@@ -29,15 +28,24 @@ app.get('/pedidos', async (req, res) => {
     const form = new URLSearchParams({
       token: TOKEN,
       formato: FORMATO,
-      situacao: status,
       data_inicial: dataInicial,
       data_final: dataFinal
     });
 
+    // Só inclui o status se for informado
+    if (status) form.append('situacao', status);
+
     const { data } = await axios.post(`${TINY_API_BASE}/pedidos.pesquisa.php`, form.toString(), urlEncodedHeaders);
 
-    if (data.retorno.status !== "OK") {
-      return res.status(500).json({ error: "Erro ao buscar pedidos", detalhes: data.retorno.erros });
+    if (data.retorno.status === "Erro") {
+      const erroMsg = data.retorno.erros?.[0]?.erro || "Erro desconhecido";
+      if (erroMsg.toLowerCase().includes("token")) {
+        return res.status(401).json({ error: "Token inválido. Verifique suas credenciais da API do Tiny." });
+      } else if (erroMsg.toLowerCase().includes("não retornou registros")) {
+        return res.status(200).json({ pedidos: [], mensagem: "Nenhum pedido encontrado com os filtros aplicados." });
+      } else {
+        return res.status(500).json({ error: erroMsg });
+      }
     }
 
     const pedidos = (data.retorno.pedidos || []).map(p => ({
@@ -49,6 +57,7 @@ app.get('/pedidos', async (req, res) => {
     }));
 
     res.json({ pedidos });
+
   } catch (error) {
     console.error('[ERRO] /pedidos:', error.response?.data || error.message);
     res.status(500).json({ error: 'Erro ao buscar pedidos.' });
